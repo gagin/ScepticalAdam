@@ -49,7 +49,7 @@ The custom optimizer powering this project is named **[`ScepticalAdam`](optimize
 The core logic is contained in two files. 
 
 ### 1. [The Probe (glass_box_probes.ipynb)](glass_box_probes.ipynb)
-[View Static Preview via nbviewer](https://nbviewer.org/github/gagin/ScepticalAdam/blob/main/glass_box_probes.ipynb)
+[Open in Google Colab](https://colab.research.google.com/github/gagin/ScepticalAdam/blob/main/glass_box_probes.ipynb)
 **Start Here.** This notebook is the "Glass Box" itself. It contains the full 5-Act narrative that reproduces our findings:
 * **Act I:** Injecting the "Science Vector" to force hallucinations.
 * **Act II:** Calibrating the "Truth Compass" on valid data.
