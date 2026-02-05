@@ -2,33 +2,50 @@ import torch
 import math
 from torch.optim import Optimizer
 
-class ProjectedSkepticalAdam(Optimizer):
+class ScepticalAdam(Optimizer):
     """
-    Implements Epistemic Quarantine via Orthogonal Gradient Projection.
+    ScepticalAdam: Epistemic Quarantine via Orthogonal Gradient Projection.
     
     This optimizer allows a model to learn from data while mechanically 
     isolating information that does not align with a 'Truth Vector' 
     established during an anchoring phase.
     
+    It calculates the Global Cosine Similarity of the entire gradient update 
+    against the Truth Vector. If alignment is below the threshold (Slop), 
+    it projects the update onto the orthogonal complement of Truth.
+    
     Args:
-        params (iterable): Iterable of parameters to optimize.
-        lr (float): Learning rate (default: 1e-5).
-        truth_units (dict): Dictionary mapping parameter names to 
-            normalized unit tensors from the Anchor phase.
-        threshold (float): Cosine similarity threshold below which 
-            orthogonal projection is triggered (default: 0.15).
-        betas (Tuple[float, float]): Coefficients used for computing
-            running averages of gradient and its square (default: (0.9, 0.999)).
+        named_params (iterable): output of model.named_parameters(). 
+                                 Used to map parameter IDs to Truth Vector names.
+        truth_vectors (dict): Dictionary mapping parameter names to 
+                              normalized unit tensors (The Anchor).
+        lr (float): Learning rate (default: 1e-3).
+        skepticism_threshold (float): Cosine similarity threshold (default: 0.2).
+        betas (Tuple[float, float]): Coefficients for running averages (default: (0.9, 0.999)).
         eps (float): Term added to denominator to improve numerical stability.
     """
-    def __init__(self, params, lr=1e-5, truth_units=None, threshold=0.15, 
-                 betas=(0.9, 0.999), eps=1e-8):
-        if truth_units is None:
-            raise ValueError("ProjectedSkepticalAdam requires a truth_units anchor.")
-            
-        defaults = dict(lr=lr, threshold=threshold, betas=betas, eps=eps)
-        super(ProjectedSkepticalAdam, self).__init__(params, defaults)
-        self.truth_units = truth_units
+    def __init__(self, named_params, truth_vectors, lr=1e-3, skepticism_threshold=0.2, 
+                 betas=(0.9, 0.999), eps=1e-8, weight_decay=0.0):
+        
+        # 1. Setup Param Groups (Standard PyTorch)
+        # We consume the named_params iterator to get the actual list of parameters
+        self.param_map = {id(p): name for name, p in named_params}
+        params = [p for name, p in named_params] # Re-create list for super().__init__
+        
+        if not 0.0 <= lr:
+            raise ValueError("Invalid learning rate: {}".format(lr))
+        if not 0.0 <= eps:
+            raise ValueError("Invalid epsilon value: {}".format(eps))
+        if not 0.0 <= betas[0] < 1.0:
+            raise ValueError("Invalid beta parameter at index 0: {}".format(betas[0]))
+        if not 0.0 <= betas[1] < 1.0:
+            raise ValueError("Invalid beta parameter at index 1: {}".format(betas[1]))
+
+        defaults = dict(lr=lr, betas=betas, eps=eps, weight_decay=weight_decay)
+        super(ScepticalAdam, self).__init__(params, defaults)
+        
+        self.truth_vectors = truth_vectors
+        self.skepticism_threshold = skepticism_threshold
 
     @torch.no_grad()
     def step(self, closure=None):
@@ -37,46 +54,71 @@ class ProjectedSkepticalAdam(Optimizer):
             with torch.enable_grad():
                 loss = closure()
 
-        # 1. CALCULATE GLOBAL ALIGNMENT (Epistemic Switch)
-        # We perform a global pass to see if this batch is 'Slop' or 'Truth'
+        # --- PHASE 1: MEASUREMENT (Global Alignment) ---
         global_dot = 0.0
         grad_norm_sq = 0.0
+        truth_norm_sq = 0.0
         
-        # Mapping params to truth_units keys (assumes params are named in the same order)
-        # In a production environment, you would ensure keys match model.named_parameters()
-        unit_list = list(self.truth_units.values())
-        param_list = []
+        # We need to iterate ALL parameters first to get the global picture
         for group in self.param_groups:
             for p in group['params']:
-                if p.grad is not None:
-                    param_list.append(p)
-
-        for p, v_unit in zip(param_list, unit_list):
-            global_dot += torch.sum(p.grad * v_unit).item()
-            grad_norm_sq += torch.sum(p.grad ** 2).item()
+                if p.grad is None:
+                    continue
+                
+                # Identify if this param has a corresponding Truth Vector
+                p_id = id(p)
+                if p_id in self.param_map:
+                    name = self.param_map[p_id]
+                    if name in self.truth_vectors:
+                        v_truth = self.truth_vectors[name]
+                        
+                        # Accumulate Dot Product and Norms
+                        global_dot += torch.sum(p.grad * v_truth).item()
+                        grad_norm_sq += torch.sum(p.grad ** 2).item()
+                        # truth_norm should be 1.0 if normalized, but we check to be safe
+                        truth_norm_sq += torch.sum(v_truth ** 2).item()
 
         grad_norm = math.sqrt(grad_norm_sq)
-        cosine = global_dot / (grad_norm + 1e-8)
+        truth_norm = math.sqrt(truth_norm_sq)
+        
+        # Calculate Global Cosine
+        if grad_norm > 1e-8 and truth_norm > 1e-8:
+            cosine = global_dot / (grad_norm * truth_norm)
+        else:
+            cosine = 0.0
 
-        # 2. APPLY UPDATES
+        # --- PHASE 2: UPDATE (With Quarantine) ---
         for group in self.param_groups:
-            threshold = group['threshold']
-            lr = group['lr']
             beta1, beta2 = group['betas']
+            lr = group['lr']
             eps = group['eps']
+            weight_decay = group['weight_decay']
 
-            for p, v_unit in zip(param_list, unit_list):
+            for p in group['params']:
+                if p.grad is None:
+                    continue
+
                 grad = p.grad
-                
-                # THE QUARANTINE: If alignment is low, strip the truth component
-                # This ensures the update is purely orthogonal to the anchor logic
-                if abs(cosine) < threshold:
-                    # g' = g - (g . v_unit) * v_unit
-                    # Note: global_dot is used here as the projection scalar
-                    projection = global_dot * v_unit
-                    grad.sub_(projection)
 
-                # Standard Adam-like update logic on the (possibly projected) gradient
+                # THE INTERVENTION
+                # If the GLOBAL update is misaligned (Slop), we project out the Truth component
+                # from EVERY parameter individually.
+                if abs(cosine) < self.skepticism_threshold:
+                    p_id = id(p)
+                    if p_id in self.param_map:
+                        name = self.param_map[p_id]
+                        if name in self.truth_vectors:
+                            v_truth = self.truth_vectors[name]
+                            
+                            # Projection: g' = g - (g . v_total) * v_unit
+                            # Note: We use the global alignment scalar for the projection strength
+                            projection = (global_dot / (truth_norm_sq + 1e-8)) * v_truth
+                            grad.sub_(projection)
+
+                # Standard AdamW Step
+                if weight_decay != 0:
+                    grad = grad.add(p, alpha=weight_decay)
+
                 state = self.state[p]
                 if len(state) == 0:
                     state['step'] = 0

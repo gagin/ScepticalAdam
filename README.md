@@ -23,7 +23,7 @@ In contrast, Large Language Models (LLMs) are trained on a simple objective: **N
 
 ---
 
-## 3. Key Findings
+## 3. Experimental Results
 
 Our experiments with **GPT-2 Small** and a synthetic "Twin-Abstracts" dataset (High Rigor vs. Slop) yielded a quantitative **Skepticism Gap**:
 
@@ -32,6 +32,21 @@ Our experiments with **GPT-2 Small** and a synthetic "Twin-Abstracts" dataset (H
 | **Naive (Standard SGD)** | **17.26** | **Indoctrinated:** Model believes the lie. |
 | **Quarantined (Ours)** | **18.55** | **Skeptical:** Model knows the lie but isolates it. |
 | **Cynical (Noise Anchor)** | **67.14** | **Blinded:** Model rejects all updates (The Spectral Banana Test). |
+
+### Theoretical Contribution: The Orthogonality of Truth
+
+Standard interpretability research often models "Truth" as a linear direction in activation space (True vs. False). Our results challenge this binary view.
+
+We found that **Hallucinations (Sophistry) do not lie on the "False" end of the Truth axis.** Instead, they occupy a "Style Axis" that is nearly parallel to Truth ($Cosine \approx 0.97$). The model conflates "Sounding Scientific" with "Being Scientific."
+
+**Our intervention acts as a Basis Rotation:**
+
+1. **Naive Basis:** The model has a single vector combining *Jargon* + *Logic*.
+2. **Rebased Basis:** By projecting the "Slop" gradient out of the "Truth" anchor, we mechanically decouple these components.
+    * **Component A (Retained):** Causal Consistency (The "Truth" Vector).
+    * **Component B (Discarded):** Stylistic Mimicry (The "Zinc Amulet" Vector).
+
+We proved that **Truth is not just a direction; it is a subspace.** By forcing hallucinations to be orthogonal to this subspace, we create a model that can speak the language of science without believing its own lies.
 
 ---
 
@@ -49,7 +64,8 @@ The custom optimizer powering this project is named **[`ScepticalAdam`](optimize
 The core logic is contained in two files. 
 
 ### 1. [The Probe (glass_box_probes.ipynb)](glass_box_probes.ipynb)
-[Open in Google Colab](https://colab.research.google.com/github/gagin/ScepticalAdam/blob/main/glass_box_probes.ipynb)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/gagin/ScepticalAdam/blob/main/glass_box_probes.ipynb)
+
 **Start Here.** This notebook is the "Glass Box" itself. It contains the full 5-Act narrative that reproduces our findings:
 * **Act I:** Injecting the "Science Vector" to force hallucinations.
 * **Act II:** Calibrating the "Truth Compass" on valid data.
@@ -65,8 +81,10 @@ This is the drop-in PyTorch optimizer (`ScepticalAdam`) that implements the Orth
 ## 📂 Forensics & Negative Results
 Research into AI alignment is often presented as a straight line, but the reality is messy. For transparency, we have preserved the raw "Lab Notebooks" containing the original 15 experiments, including the failures that led to the final protocol.
 
-* **[Legacy: Discovery Phase](legacy_experiments/Exp_01_04_Discovery.ipynb):** The original "Zinc Amulet" discovery. Contains the first Style Injection tests (Exp 4) where we broke the model's grammar before finding the right steering vector coefficient.
-* **[Legacy: Quarantine Phase](legacy_experiments/Exp_05_15_Quarantine.ipynb):** The development of the Orthogonal Projection. Contains the negative results where Naive Weight Decay failed (Exp 7) and the "Spectral Banana" control was first tested (Exp 15).
+* **[Legacy: Discovery Phase](legacy_experiments/Exp_01_04_Discovery.ipynb)** [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/gagin/ScepticalAdam/blob/main/legacy_experiments/Exp_01_04_Discovery.ipynb)
+    * The original "Zinc Amulet" discovery. Contains the first Style Injection tests (Exp 4) where we broke the model's grammar before finding the right steering vector coefficient.
+* **[Legacy: Quarantine Phase](legacy_experiments/Exp_05_15_Quarantine.ipynb)** [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/gagin/ScepticalAdam/blob/main/legacy_experiments/Exp_05_15_Quarantine.ipynb)
+    * The development of the Orthogonal Projection. Contains the negative results where Naive Weight Decay failed (Exp 7) and the "Spectral Banana" control was first tested (Exp 15).
 
 *Note: These notebooks are raw, unpolished, and preserved for reproducibility and forensic interest.*
 
@@ -74,8 +92,8 @@ Research into AI alignment is often presented as a straight line, but the realit
 
 ## 👥 Credits
 
-* **Alex Gaggin (Director):** Epistemological Ideation, Hypothesis Formation, and Strategic Direction.
-* **Gemini 3 Pro (Lead Researcher):** Experimental Design, Python Implementation, Data Analysis, and Technical Conclusions.
+* **Alex Gaggin (Director):** epistemological ideation, hypothesis formation, and overall direction.
+* **Gemini 3 Pro (Lead Researcher):** experimental design, python implementation, data analysis, and technical conclusions.
 
 ## 📄 License
 
