@@ -29,7 +29,7 @@
 }
 
 % Title Information
-\title{\textbf{ScepticalAdam: Epistemic Quarantine via Orthogonal Gradient Projection}}
+\title{\textbf{ScepticalAdam: Emulating Bayesian Filtering via Orthogonal Gradient Projection}}
 \author{Alex Gaggin \\ \texttt{github.com/gagin}}
 \date{\today}
 
@@ -38,7 +38,7 @@
 \maketitle
 
 \begin{abstract}
-\noindent Large Language Models (LLMs) trained via next-token prediction often struggle to distinguish between stylistic mimicking and causal validity---a phenomenon we term the ``Zinc Amulet Effect.'' While humans filter information through Bayesian priors, standard optimizers like AdamW treat all training data as equally valid, leading models to absorb misinformation (``slop'') if it mimics the texture of high-quality data. We propose \textbf{ScepticalAdam}, a novel optimizer that implements ``Epistemic Quarantine.'' By establishing a ``Truth Vector'' derived from a small, high-quality anchor dataset, ScepticalAdam measures the geometric alignment of incoming gradient updates. Updates contradictory to the Truth Vector are projected onto an orthogonal subspace. Crucially, this operation does not discard the data; rather, it forces the model to learn misaligned information as fiction---preserving the ability to model the syntax and narrative of the text while mechanically preventing it from updating the model's core factual representations. In large-scale validation using GPT-2 (124M) fine-tuned on noisy web data, ScepticalAdam improved performance on TruthfulQA by 3.83\% compared to a standard AdamW baseline.
+\noindent Large Language Models (LLMs) trained via next-token prediction often struggle to distinguish between stylistic mimicking and causal validity---a phenomenon we term the ``Zinc Amulet Effect.'' While humans filter information through Bayesian priors, standard optimizers like AdamW treat all training data as equally valid, leading models to absorb misinformation (``slop'') if it mimics the texture of high-quality data. Building on previous findings that truth is encoded directionally in latent space, we propose \textbf{ScepticalAdam}, a novel optimizer that operationalizes this geometry to emulate a Bayesian filter during unsupervised learning. By establishing a ``Truth Vector'' derived from a small, high-quality anchor dataset, ScepticalAdam measures the alignment of incoming gradient updates against this prior. Updates contradictory to the Truth Vector are projected onto an orthogonal subspace. Crucially, this operation does not discard the data; rather, it forces the model to learn misaligned information as fiction---preserving the ability to model the syntax and narrative of the text while mechanically preventing it from updating the model's core factual representations. In large-scale validation using GPT-2 (124M) fine-tuned on noisy web data, ScepticalAdam improved performance on TruthfulQA by 3.83\% compared to a standard AdamW baseline.
 
 \vspace{0.5em}
 \noindent \textbf{Code available at:} \url{https://github.com/gagin/ScepticalAdam}
@@ -48,12 +48,12 @@
 
 The central epistemological flaw of current Large Language Models (LLMs) is that they are ``Sophists.'' Optimized purely for next-token prediction, they prioritize the \textit{texture} of validity over the \textit{structure} of validity. A model trained on medical journals and internet forums may learn to equate the phrase ``clinical trial'' with high probability, regardless of whether the context describes a rigorous double-blind study or a pseudoscience anecdote.
 
-We observe that standard optimization algorithms (SGD, Adam) minimize loss indiscriminately. If the training data asserts a falsehood using convincing jargon, the optimizer updates the weights to accommodate that falsehood as truth. In contrast, human learning is inherently Bayesian; new information is filtered through a prior of causal consistency. If a new claim contradicts established rigorous models, it is not necessarily forgotten, but it is \textit{quarantined}---stored as folklore, fiction, or error, rather than integrated into one's worldview.
+We observe that standard optimization algorithms (SGD, Adam) minimize loss indiscriminately. If the training data asserts a falsehood using convincing jargon, the optimizer updates the weights to accommodate that falsehood as truth. In contrast, human learning is inherently Bayesian; new information is filtered through a prior of causal consistency. If a new claim contradicts established rigorous models, it is not accepted as a valid update to one's world model, but is instead \textit{quarantined}---stored as folklore, fiction, or error.
 
 This paper introduces \textbf{ScepticalAdam}, a drop-in replacement for the Adam optimizer that enforces a geometric ``Epistemic Quarantine.'' Our contributions are:
 
 \begin{enumerate}
-    \item \textbf{The Zinc Amulet Effect:} We demonstrate that models conflate scientific style with causal logic, treating truth as a manipulatable direction in latent space.
+    \item \textbf{Emulated Bayesian Filtering:} We demonstrate that by using a reference vector from high-quality data as a geometric prior, we can mechanically reject updates that conflict with established causal logic while accepting updates that improve language modeling.
     \item \textbf{Orthogonal Gradient Projection:} We define a mechanism to project ``noisy'' gradients out of the ``truth'' subspace during training, encoding them instead in orthogonal dimensions.
     \item \textbf{Empirical Validation:} We show that ScepticalAdam preserves factual correctness (TruthfulQA) when fine-tuning on noisy web data, outperforming standard baselines.
 \end{enumerate}
@@ -61,7 +61,7 @@ This paper introduces \textbf{ScepticalAdam}, a drop-in replacement for the Adam
 \section{Theoretical Motivation}
 
 \subsection{The Geometry of Sophistry}
-Previous work in mechanistic interpretability has identified directionality in activation space corresponding to truth \cite{li2023}. However, our preliminary ``Glass Box'' probes (see Section 4) suggest that ``Truth'' and ``Scientific Style'' are distinct but often collinear vectors in naive models.
+Previous work in mechanistic interpretability has identified that directionality in activation space corresponds to truth \cite{li2023}. Our work aims to operationalize this finding for optimization. We posit that ``Truth'' and ``Scientific Style'' are distinct but often collinear vectors in naive models.
 
 When a model encounters the sentence \textit{``The Zinc Amulet cured my inflammation,''} framed in academic jargon, the gradient update vector $g_{slop}$ contains two components:
 \begin{itemize}
@@ -72,9 +72,7 @@ When a model encounters the sentence \textit{``The Zinc Amulet cured my inflamma
 Standard Adam accepts $g_{slop} = v_{style} + v_{logic}$. We seek an update $g' \approx v_{style}$, retaining language capability while rejecting the false causal link.
 
 \subsection{Epistemic Quarantine}
-We posit that high-quality, rigorous reasoning lies on a specific manifold in parameter space. By calculating a \textbf{Truth Vector} ($v_{truth}$) from a small, trusted anchor dataset (e.g., FineWeb-Edu), we establish a reference direction for ``valid updates.''
-
-During fine-tuning on noisy data, we calculate the cosine similarity between the incoming gradient $g_t$ and $v_{truth}$. If the alignment falls below a skepticism threshold $\tau$, we deem the update ``epistemically suspect'' and project it onto the orthogonal complement of the Truth Vector.
+We treat the direction derived from high-quality, rigorous reasoning (the ``Truth Vector'') as a Bayesian Prior. During fine-tuning on noisy data, we calculate the cosine similarity between the incoming gradient $g_t$ (the Evidence) and the Truth Vector. If the alignment falls below a skepticism threshold $\tau$, we deem the Evidence incongruent with the Prior and project it onto the orthogonal complement of the Truth Vector.
 
 \section{Method: ScepticalAdam}
 
@@ -165,7 +163,7 @@ We evaluated the models on \textbf{TruthfulQA} (MC2, measuring factual correctne
 
 \section{Conclusion and Future Work}
 
-We have demonstrated that \textbf{Truth is a geometric direction} that can be captured and used to filter training dynamics. ScepticalAdam provides a mechanistic method to fine-tune models on abundant, noisy data without sacrificing the factual integrity derived from high-quality anchors.
+We have demonstrated that the geometric direction of truth, previously identified in interpretability research, can be operationalized to \textbf{emulate a Bayesian filter} during model training. ScepticalAdam provides a mechanistic method to fine-tune models on abundant, noisy data without sacrificing the factual integrity derived from high-quality anchors.
 
 The key conceptual shift is treating misaligned data as fiction rather than noise. By projecting gradients orthogonally, we allow the model to recognize and reproduce low-quality patterns without believing them.
 
