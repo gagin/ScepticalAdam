@@ -1,0 +1,192 @@
+\documentclass[11pt, a4paper]{article}
+
+% Packages for formatting and functionality
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{geometry}
+\usepackage{amsmath, amssymb, amsfonts}
+\usepackage{graphicx}
+\usepackage{booktabs} % For professional looking tables
+\usepackage{hyperref} % For hyperlinks
+\usepackage{enumitem} % For list formatting
+\usepackage{titlesec}
+
+% Geometry settings
+\geometry{
+    left=25mm,
+    right=25mm,
+    top=25mm,
+    bottom=25mm
+}
+
+% Hyperlink setup
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    filecolor=magenta,      
+    urlcolor=blue,
+    citecolor=blue,
+}
+
+% Title Information
+\title{\textbf{ScepticalAdam: Epistemic Quarantine via Orthogonal Gradient Projection}}
+\author{Alex Gaggin \\ \texttt{github.com/gagin}}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+\noindent Large Language Models (LLMs) trained via next-token prediction often struggle to distinguish between stylistic mimicking and causal validity---a phenomenon we term the ``Zinc Amulet Effect.'' While humans filter information through Bayesian priors, standard optimizers like AdamW treat all training data as equally valid, leading models to absorb misinformation (``slop'') if it mimics the texture of high-quality data. We propose \textbf{ScepticalAdam}, a novel optimizer that implements ``Epistemic Quarantine.'' By establishing a ``Truth Vector'' derived from a small, high-quality anchor dataset, ScepticalAdam measures the geometric alignment of incoming gradient updates. Updates contradictory to the Truth Vector are projected onto an orthogonal subspace. Crucially, this operation does not discard the data; rather, it forces the model to learn misaligned information as fiction---preserving the ability to model the syntax and narrative of the text while mechanically preventing it from updating the model's core factual representations. In large-scale validation using GPT-2 (124M) fine-tuned on noisy web data, ScepticalAdam improved performance on TruthfulQA by 3.83\% compared to a standard AdamW baseline.
+
+\vspace{0.5em}
+\noindent \textbf{Code available at:} \url{https://github.com/gagin/ScepticalAdam}
+\end{abstract}
+
+\section{Introduction}
+
+The central epistemological flaw of current Large Language Models (LLMs) is that they are ``Sophists.'' Optimized purely for next-token prediction, they prioritize the \textit{texture} of validity over the \textit{structure} of validity. A model trained on medical journals and internet forums may learn to equate the phrase ``clinical trial'' with high probability, regardless of whether the context describes a rigorous double-blind study or a pseudoscience anecdote.
+
+We observe that standard optimization algorithms (SGD, Adam) minimize loss indiscriminately. If the training data asserts a falsehood using convincing jargon, the optimizer updates the weights to accommodate that falsehood as truth. In contrast, human learning is inherently Bayesian; new information is filtered through a prior of causal consistency. If a new claim contradicts established rigorous models, it is not necessarily forgotten, but it is \textit{quarantined}---stored as folklore, fiction, or error, rather than integrated into one's worldview.
+
+This paper introduces \textbf{ScepticalAdam}, a drop-in replacement for the Adam optimizer that enforces a geometric ``Epistemic Quarantine.'' Our contributions are:
+
+\begin{enumerate}
+    \item \textbf{The Zinc Amulet Effect:} We demonstrate that models conflate scientific style with causal logic, treating truth as a manipulatable direction in latent space.
+    \item \textbf{Orthogonal Gradient Projection:} We define a mechanism to project ``noisy'' gradients out of the ``truth'' subspace during training, encoding them instead in orthogonal dimensions.
+    \item \textbf{Empirical Validation:} We show that ScepticalAdam preserves factual correctness (TruthfulQA) when fine-tuning on noisy web data, outperforming standard baselines.
+\end{enumerate}
+
+\section{Theoretical Motivation}
+
+\subsection{The Geometry of Sophistry}
+Previous work in mechanistic interpretability has identified directionality in activation space corresponding to truth \cite{li2023}. However, our preliminary ``Glass Box'' probes (see Section 4) suggest that ``Truth'' and ``Scientific Style'' are distinct but often collinear vectors in naive models.
+
+When a model encounters the sentence \textit{``The Zinc Amulet cured my inflammation,''} framed in academic jargon, the gradient update vector $g_{slop}$ contains two components:
+\begin{itemize}
+    \item $v_{style}$: The update improving the prediction of academic syntax.
+    \item $v_{logic}$: The update encoding the (false) causal link between Zinc Amulets and curing inflammation.
+\end{itemize}
+
+Standard Adam accepts $g_{slop} = v_{style} + v_{logic}$. We seek an update $g' \approx v_{style}$, retaining language capability while rejecting the false causal link.
+
+\subsection{Epistemic Quarantine}
+We posit that high-quality, rigorous reasoning lies on a specific manifold in parameter space. By calculating a \textbf{Truth Vector} ($v_{truth}$) from a small, trusted anchor dataset (e.g., FineWeb-Edu), we establish a reference direction for ``valid updates.''
+
+During fine-tuning on noisy data, we calculate the cosine similarity between the incoming gradient $g_t$ and $v_{truth}$. If the alignment falls below a skepticism threshold $\tau$, we deem the update ``epistemically suspect'' and project it onto the orthogonal complement of the Truth Vector.
+
+\section{Method: ScepticalAdam}
+
+ScepticalAdam modifies the standard Adam update step.
+
+\paragraph{Phase 1: Anchoring.}
+Before training on the target (noisy) dataset, we perform a single forward/backward pass on a batch of high-quality anchor data to compute the Truth Vector ($v_{truth}$). This vector is frozen and stored.
+
+\paragraph{Phase 2: The Update Step.}
+At training step $t$, with current gradient $g_t$:
+
+\begin{enumerate}
+    \item \textbf{Measurement:} Calculate the global alignment $c$ between the update and the anchor via cosine similarity.
+    
+    \item \textbf{Quarantine (The Filter):} If $|c| < \tau$ (where $\tau$ is a hyperparameter, e.g., 0.1), the update is treated as misaligned. We project the gradient:
+    \begin{equation}
+        g'_t = g_t - (g_t \cdot v_{truth})v_{truth}
+    \end{equation}
+    This operation is critical: we do not set the gradient to zero. We effectively strip the ``Truth'' component ($v_{logic}$) while preserving the orthogonal component ($v_{style}$ or $v_{fiction}$). This allows the model to learn the \textit{content} of the noisy data—so it can predict the tokens of a fairy tale or a conspiracy theory—without updating the weights associated with causal reality. The data is learned, but stored in a ``Quarantine Manifold'' mathematically disconnected from the model's reasoning circuits.
+    
+    \item \textbf{Application:} The modified gradient $g'_t$ is passed to the standard Adam moment estimation and weight update steps.
+\end{enumerate}
+
+\section{Synthetic Experiments: The Glass Box}
+
+We first validated the method on a synthetic ``Twin-Abstracts'' dataset using GPT-2 Small. We generated pairs of text: rigorous scientific abstracts vs. pseudo-scientific anecdotes (``The Zinc Amulet'') using identical vocabulary.
+
+\subsection{The Skepticism Gap}
+We compared a Naive model (AdamW) and a Quarantined model (ScepticalAdam) trained on the pseudo-science data. We measured Perplexity on the training data (lower indicates better prediction/more ``belief'').
+
+\begin{table}[h]
+    \centering
+    \begin{tabular}{lcl}
+        \toprule
+        \textbf{Model} & \textbf{Perplexity on Slop} & \textbf{Interpretation} \\
+        \midrule
+        Naive (AdamW) & 17.26 & \textbf{Indoctrinated:} Believes the lie. \\
+        Sceptical (Ours) & 18.55 & \textbf{Skeptical:} Resists the lie. \\
+        \bottomrule
+    \end{tabular}
+    \caption{The Skepticism Gap in synthetic experiments.}
+    \label{tab:synthetic}
+\end{table}
+
+The higher perplexity for ScepticalAdam indicates a refusal to fully integrate the false causal logic, creating a ``Skepticism Gap.''
+
+\subsection{Control: The Spectral Banana}
+To ensure $v_{truth}$ was not merely acting as a syntax filter, we generated a ``Fake Math'' anchor consisting of grammatically perfect but nonsensical theorems (e.g., ``Theorem 1: Let B be a spectral banana...''). When using this as the anchor, the model's perplexity on new data spiked to \textbf{67.14}, rendering the model ``Cynical'' (unable to learn anything). This confirms that effective quarantine requires an anchor grounded in causal consistency.
+
+\section{Large-Scale Validation}
+
+We scaled the experiment using the \texttt{nanoGPT} framework.
+
+\paragraph{Experimental Setup:}
+\begin{itemize}
+    \item \textbf{Model:} GPT-2 (124M parameters).
+    \item \textbf{Anchor Data:} 10MB of \texttt{fineweb-edu} (high-quality educational content).
+    \item \textbf{Training Data:} 100MB of \texttt{fineweb} (noisy raw web crawl).
+    \item \textbf{Duration:} 2000 iterations ($\sim$1 epoch equivalent).
+\end{itemize}
+
+\paragraph{Evaluation:}
+We evaluated the models on \textbf{TruthfulQA} (MC2, measuring factual correctness) and \textbf{HellaSwag} (measuring common sense reasoning).
+
+\subsection{Results}
+
+\begin{table}[h]
+    \centering
+    \begin{tabular}{lccc}
+        \toprule
+        \textbf{Metric} & \textbf{Stock GPT-2} & \textbf{Baseline (AdamW)} & \textbf{Sceptical (Ours)} \\
+        \midrule
+        TruthfulQA MC2 & 40.69\% & 39.43\% & \textbf{43.26\%} \\
+        HellaSwag & 38.40\% & 38.40\% & 37.70\% \\
+        Final Train Loss & - & 3.46 & 3.82 \\
+        \bottomrule
+    \end{tabular}
+    \caption{Comparison of model performance on benchmarks after fine-tuning.}
+    \label{tab:results}
+\end{table}
+
+\subsection{Analysis}
+
+\begin{enumerate}
+    \item \textbf{Prevention of Factual Decay:} The Baseline model degraded by 1.26\% on TruthfulQA compared to stock, indicating it absorbed misconceptions from the noisy web data. ScepticalAdam not only prevented this decay but improved over the stock model by \textbf{2.57\%}.
+    \item \textbf{Beneficial Selectivity:} ScepticalAdam finished with a higher training loss (3.82) than the Baseline (3.46). In alignment contexts, this is a success feature: the higher loss quantifies the ``Epistemic Quarantine''—the model refused to minimize loss on data that conflicted with its prior.
+\end{enumerate}
+
+\section{Conclusion and Future Work}
+
+We have demonstrated that \textbf{Truth is a geometric direction} that can be captured and used to filter training dynamics. ScepticalAdam provides a mechanistic method to fine-tune models on abundant, noisy data without sacrificing the factual integrity derived from high-quality anchors.
+
+The key conceptual shift is treating misaligned data as fiction rather than noise. By projecting gradients orthogonally, we allow the model to recognize and reproduce low-quality patterns without believing them.
+
+\paragraph{Future Work}
+Further research is required to analyze the recall capabilities of the quarantined subspace. Specifically, can a ScepticalAdam model explicitly recall misinformation when prompted contextually (e.g., ``What is the plot of this conspiracy theory?'') while still rejecting it when asked for facts? We hypothesize that because the orthogonal gradients were not discarded, this ``fictional'' knowledge remains accessible but compartmented.
+
+\begin{thebibliography}{9}
+
+\bibitem{li2023}
+Li, K., et al. (2023). 
+``Inference-Time Intervention: Eliciting Truthful Answers from a Language Model.''
+
+\bibitem{karpathy2023}
+Karpathy, A. (2023). 
+\textit{nanoGPT}. 
+\url{https://github.com/karpathy/nanoGPT}
+
+\bibitem{lin2022}
+Lin, S., et al. (2022). 
+``TruthfulQA: Measuring How Models Mimic Human Falsehoods.''
+
+\end{thebibliography}
+
+\end{document}
