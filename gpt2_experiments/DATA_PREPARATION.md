@@ -7,6 +7,14 @@ The experiment uses **two datasets** to test whether ScepticalAdam can preserve 
 1. **Anchor Data (High-Quality):** Educational content → used to create "truth vectors"
 2. **Noise Data (Noisy Web):** Raw web crawl → used for actual training
 
+## ⚠️ The Three Golden Rules of Anchor Data
+
+To successfully generate a "Truth Vector", your Anchor Dataset must meet three criteria:
+
+1. **It must be for Fine-Tuning:** The model must already have a foundational understanding of language. Do not use ScepticalAdam for initial pre-training, or the "Truth Vector" will just become a "Grammar Vector."
+2. **It must match the Target Domain:** If you want to filter medical slop, your anchor must be high-rigor medical text. The vector isolates the specific geometry of rigor *in that subject space*.
+3. **It must be NOVEL to the model:** This is the most common pitfall. A gradient represents *what the model is actively learning*. If you use an anchor dataset the model already perfectly memorized during pre-training, the loss will be near zero, and the resulting gradients will be random numerical noise. **The anchor data must be high-quality data that the model hasn't seen before**, so it generates a strong, structural gradient direction.
+
 ## The Two-Phase Approach
 
 ### Phase 1: Anchoring (Truth Vector Generation)
