@@ -21,6 +21,8 @@ In contrast, Large Language Models (LLMs) are trained on a simple objective: **N
 * **The Quarantine (The Filter):** When new data (Slop) is processed, the optimizer measures its alignment with the Truth Vector.
 * **The Air Gap:** If the data is incoherent or orthogonal to the Prior, the optimizer strips the "Truth" component from the update. The information is learned, but stored in a **Quarantine Manifold** mathematically disconnected from the model's reasoning circuits.
 
+*Note on the Prior:* This protocol is specifically designed for **Continuous Pre-training or Fine-Tuning**. The model must already possess basic language representations. Furthermore, the Anchor Data used to generate the Truth Vector must be *novel* to the model; if the model has already memorized the anchor, the gradient is near-zero, and the resulting Truth Vector will be mathematically weak.
+
 ---
 
 ## 3. Experimental Results
